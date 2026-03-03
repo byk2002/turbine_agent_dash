@@ -1,0 +1,90 @@
+{
+    "root_locale": "zh-cn",
+    "topic": "dashboard",
+    "contents": {
+        "域名": {
+            "en-us": "hostname"
+        },
+        "系统类型": {
+            "en-us": "os name"
+        },
+        "计算机名": {
+            "en-us": "computer name"
+        },
+        "核心架构": {
+            "en-us": "os arch"
+        },
+        "型号": {
+            "en-us": "type"
+        },
+        "逻辑核数": {
+            "en-us": "logical cpu num"
+        },
+        "空闲率": {
+            "en-us": "free"
+        },
+        "总使用率": {
+            "en-us": "total usage percent"
+        },
+        "用户使用率": {
+            "en-us": "user usage percent"
+        },
+        "系统使用率": {
+            "en-us": "sys usage percent"
+        },
+        "总量": {
+            "en-us": "total"
+        },
+        "已用": {
+            "en-us": "usage"
+        },
+        "剩余": {
+            "en-us": "free"
+        },
+        "使用率": {
+            "en-us": "usage percent"
+        },
+        "Python版本": {
+            "en-us": "Python version"
+        },
+        "启动时间": {
+            "en-us": "setup time"
+        },
+        "运行时长": {
+            "en-us": "run duration"
+        },
+        "内存使用量": {
+            "en-us": "mem usage"
+        },
+        "你好，": {
+            "en-us": "Hello, "
+        },
+        "系统信息": {
+            "en-us": "System Info"
+        },
+        "进程运行状态": {
+            "en-us": "Process Status"
+        },
+        "设备名": {
+            "en-us": "device name"
+        },
+        "文件系统类型": {
+            "en-us": "filesystem name"
+        },
+        "总容量": {
+            "en-us": "total"
+        },
+        "可用": {
+            "en-us": "free"
+        },
+        "挂载点": {
+            "en-us": "mountpoint"
+        },
+        "磁盘状态": {
+            "en-us": "Disk Status"
+        },
+        "内存": {
+            "en-us": "Mem"
+        }
+    }
+}
