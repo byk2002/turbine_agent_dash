@@ -2,17 +2,9 @@
 
 from common.utilities.util_menu_access import MenuAccess
 from pathlib import Path
-import base64
-from dash import (
-    html, dcc,
-    Input, Output, State,
-    callback, no_update,
-    callback_context
-)
+from dash import html, dcc
 import feffery_antd_components as fac
-from dash_components import Card
 
-# 【DashGo规范】必须定义权限元数据，以便菜单和权限工厂识别
 access_metas = ('透平智能助手-页面',)
 
 title = "智能助手页面"
@@ -21,7 +13,6 @@ order = 2
 
 def render_content(menu_access: MenuAccess, **kwargs):
     return html.Div([
-        # 会话状态存储
         dcc.Store(id='turbine-session-store', data={'session_id': 'default_user_session'}),
 
         fac.AntdTitle("⚙️ 透平机械原理智能教学助手", level=2),
@@ -33,9 +24,7 @@ def render_content(menu_access: MenuAccess, **kwargs):
                     'label': '💬 智能问答',
                     'key': 'qa-tab',
                     'children': html.Div([
-                        # 聊天记录展示区
                         html.Div(id='chat-history-container', style={'height': '400px', 'overflowY': 'auto'}),
-                        # 输入区
                         fac.AntdInput(
                             mode='search',
                             id='chat-input',
@@ -48,7 +37,6 @@ def render_content(menu_access: MenuAccess, **kwargs):
                     'label': '📝 生成练习题',
                     'key': 'generate-tab',
                     'children': html.Div([
-                        # 使用 AntdSpace 让一行可以整齐排列多个输入控件
                         fac.AntdSpace(
                             direction='horizontal',
                             wrap=True,
@@ -61,7 +49,7 @@ def render_content(menu_access: MenuAccess, **kwargs):
                                     options=[
                                         {'label': '选择题', 'value': 'choice'},
                                         {'label': '简答题', 'value': 'short_answer'},
-                                        {'label': '计算题', 'value': 'calculation'} # 新增计算题
+                                        {'label': '计算题', 'value': 'calculation'}
                                     ],
                                     style={'width': '120px'}
                                 ),
@@ -78,12 +66,7 @@ def render_content(menu_access: MenuAccess, **kwargs):
                                 fac.AntdSpace(
                                     children=[
                                         fac.AntdText("题目数量:"),
-                                        fac.AntdInputNumber(
-                                            id='question-count-input', 
-                                            defaultValue=3, 
-                                            min=1, 
-                                            max=20 # 限制最多一次生成20题
-                                        )
+                                        fac.AntdInputNumber(id='question-count-input', defaultValue=3, min=1, max=20)
                                     ]
                                 ),
                                 fac.AntdButton("🚀 生成题目", id="generate-btn", type="primary"),
@@ -93,7 +76,7 @@ def render_content(menu_access: MenuAccess, **kwargs):
                     ])
                 },
                 {
-                    'label': '✅ 作业批改',
+                    'label': '✅ 作业批改 (支持视觉识别)',
                     'key': 'correction-tab',
                     'children': html.Div([
                         fac.AntdSpace(
@@ -103,20 +86,36 @@ def render_content(menu_access: MenuAccess, **kwargs):
                                 fac.AntdInput(
                                     id='correction-question-input',
                                     addonBefore="原题目",
-                                    placeholder="请输入需要批改的原题目内容...",
+                                    placeholder="请输入需要批改的原题目内容(选填)...",
                                     style={'width': '100%'}
                                 ),
+                                # --- 新增的文件上传区 ---
+                                dcc.Upload(
+                                    id='upload-homework-file',
+                                    children=html.Div([
+                                        html.Div("📁 点击或拖拽文件到此处", style={'fontWeight': 'bold', 'fontSize': '16px'}),
+                                        html.Div("支持上传 PDF, Word 或 图片文件供大模型识别", style={'color': '#888', 'marginTop': '5px'})
+                                    ]),
+                                    style={
+                                        'width': '100%', 'height': '100px', 'lineHeight': 'normal',
+                                        'borderWidth': '1px', 'borderStyle': 'dashed', 'borderRadius': '8px',
+                                        'borderColor': '#1677ff', 'textAlign': 'center', 'paddingTop': '25px',
+                                        'backgroundColor': '#fafafa', 'cursor': 'pointer', 'marginBottom': '10px'
+                                    },
+                                    multiple=False
+                                ),
+                                html.Div(id='upload-status-tip', style={'color': '#52c41a', 'marginBottom': '10px'}), # 用于显示已上传文件名
+                                # -------------------------
                                 fac.AntdInput(
                                     mode='text-area',
                                     id='correction-answer-input',
-                                    placeholder="请输入学生的解答内容...",
-                                    autoSize={'minRows': 4, 'maxRows': 15},
+                                    placeholder="或者手动输入学生的解答内容...",
+                                    autoSize={'minRows': 4, 'maxRows': 10},
                                     style={'width': '100%'}
                                 ),
-                                fac.AntdButton("🔍 开始批改", id="correct-btn", type="primary"),
+                                fac.AntdButton("🔍 开始智能批改", id="correct-btn", type="primary", loading_state={'is_loading': False}),
                             ]
                         ),
-                        # 批改结果展示区
                         html.Div(id='correction-result-container', style={'marginTop': '20px'})
                     ])
                 }
