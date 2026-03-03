@@ -5,10 +5,12 @@ from common.turbine_core.instance import turbine_system
 
 
 @app.callback(
-    Output('chat-history-container', 'children'),
-    Input('chat-input', 'nClicks'),
-    State('chat-input', 'value'),
-    State('turbine-session-store', 'data'),
+    Output('generate-result-container', 'children'),
+    Input('generate-btn', 'nClicks'),
+    State('chapter-input', 'value'),
+    State('question-type-select', 'value'),
+    State('difficulty-select', 'value'),  # <--- 新增获取难度
+    State('question-count-input', 'value'),  # <--- 新增获取数量
     prevent_initial_call=True
 )
 def handle_chat(n_clicks, user_input, session_data):
@@ -33,14 +35,16 @@ def handle_chat(n_clicks, user_input, session_data):
     Input('generate-btn', 'nClicks'),
     State('chapter-input', 'value'),
     State('question-type-select', 'value'),
+    State('difficulty-select', 'value'),  # <--- 新增获取难度
+    State('question-count-input', 'value'),  # <--- 新增获取数量
     prevent_initial_call=True
 )
-def handle_generate_questions(n_clicks, chapter, q_type):
+def handle_generate_questions(n_clicks, chapter, q_type, difficulty, count):
     # 调用底层出题接口
     result = turbine_system.generate_questions(
         chapter=chapter,
         question_type=q_type,
-        count=3,
-        difficulty="medium"
+        count=count,
+        difficulty=difficulty
     )
     return dcc.Markdown(result.get("response", "生成失败"))
