@@ -76,7 +76,7 @@ def render_content(menu_access: MenuAccess, **kwargs):
                     ])
                 },
                 {
-                    'label': '✅ 作业批改 (支持视觉识别)',
+                    'label': '✅ 作业批改 (支持对比识别)',
                     'key': 'correction-tab',
                     'children': html.Div([
                         fac.AntdSpace(
@@ -89,31 +89,58 @@ def render_content(menu_access: MenuAccess, **kwargs):
                                     placeholder="请输入需要批改的原题目内容(选填)...",
                                     style={'width': '100%'}
                                 ),
-                                # --- 新增的文件上传区 ---
-                                dcc.Upload(
-                                    id='upload-homework-file',
-                                    children=html.Div([
-                                        html.Div("📁 点击或拖拽文件到此处", style={'fontWeight': 'bold', 'fontSize': '16px'}),
-                                        html.Div("支持上传 PDF, Word 或 图片文件供大模型识别", style={'color': '#888', 'marginTop': '5px'})
-                                    ]),
-                                    style={
-                                        'width': '100%', 'height': '100px', 'lineHeight': 'normal',
-                                        'borderWidth': '1px', 'borderStyle': 'dashed', 'borderRadius': '8px',
-                                        'borderColor': '#1677ff', 'textAlign': 'center', 'paddingTop': '25px',
-                                        'backgroundColor': '#fafafa', 'cursor': 'pointer', 'marginBottom': '10px'
-                                    },
-                                    multiple=False
-                                ),
-                                html.Div(id='upload-status-tip', style={'color': '#52c41a', 'marginBottom': '10px'}), # 用于显示已上传文件名
+                                # --- 左右分栏：左边上传学生作业，右边上传参考答案 ---
+                                html.Div([
+                                    # 左侧：学生作业上传
+                                    html.Div([
+                                        fac.AntdText("上传学生作业", strong=True, style={'marginBottom': '5px', 'display': 'block'}),
+                                        dcc.Upload(
+                                            id='upload-homework-file',
+                                            children=html.Div([
+                                                html.Div("📁 点击/拖拽学生作业", style={'fontWeight': 'bold', 'fontSize': '14px'}),
+                                                html.Div("(PDF/Word/图片)", style={'color': '#888', 'marginTop': '5px', 'fontSize': '12px'})
+                                            ]),
+                                            style={
+                                                'width': '100%', 'height': '80px', 'lineHeight': 'normal',
+                                                'borderWidth': '1px', 'borderStyle': 'dashed', 'borderRadius': '8px',
+                                                'borderColor': '#1677ff', 'textAlign': 'center', 'paddingTop': '15px',
+                                                'backgroundColor': '#e6f4ff', 'cursor': 'pointer'
+                                            },
+                                            multiple=False
+                                        ),
+                                        html.Div(id='upload-status-tip', style={'color': '#1677ff', 'marginTop': '5px', 'fontSize': '12px', 'minHeight': '18px'}),
+                                    ], style={'width': '48%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+                                    
+                                    # 右侧：参考答案上传
+                                    html.Div([
+                                        fac.AntdText("上传参考答案", strong=True, style={'marginBottom': '5px', 'display': 'block'}),
+                                        dcc.Upload(
+                                            id='upload-standard-answer-file',
+                                            children=html.Div([
+                                                html.Div("📄 点击/拖拽参考答案", style={'fontWeight': 'bold', 'fontSize': '14px'}),
+                                                html.Div("(PDF/Word/图片)", style={'color': '#888', 'marginTop': '5px', 'fontSize': '12px'})
+                                            ]),
+                                            style={
+                                                'width': '100%', 'height': '80px', 'lineHeight': 'normal',
+                                                'borderWidth': '1px', 'borderStyle': 'dashed', 'borderRadius': '8px',
+                                                'borderColor': '#52c41a', 'textAlign': 'center', 'paddingTop': '15px',
+                                                'backgroundColor': '#f6ffed', 'cursor': 'pointer'
+                                            },
+                                            multiple=False
+                                        ),
+                                        html.Div(id='upload-standard-status-tip', style={'color': '#52c41a', 'marginTop': '5px', 'fontSize': '12px', 'minHeight': '18px'}),
+                                    ], style={'width': '48%', 'display': 'inline-block', 'marginLeft': '4%', 'verticalAlign': 'top'}),
+                                ], style={'width': '100%', 'marginBottom': '10px'}),
                                 # -------------------------
+                                
                                 fac.AntdInput(
                                     mode='text-area',
                                     id='correction-answer-input',
-                                    placeholder="或者手动输入学生的解答内容...",
+                                    placeholder="或者手动输入学生的解答内容(选填)...",
                                     autoSize={'minRows': 4, 'maxRows': 10},
                                     style={'width': '100%'}
                                 ),
-                                fac.AntdButton("🔍 开始智能批改", id="correct-btn", type="primary", loading_state={'is_loading': False}),
+                                fac.AntdButton("🔍 开始对比批改", id="correct-btn", type="primary", loading_state={'is_loading': False}),
                             ]
                         ),
                         html.Div(id='correction-result-container', style={'marginTop': '20px'})
