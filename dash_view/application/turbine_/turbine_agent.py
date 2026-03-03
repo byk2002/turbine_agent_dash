@@ -35,7 +35,8 @@ def render_content(menu_access: MenuAccess, **kwargs):
                         # 聊天记录展示区
                         html.Div(id='chat-history-container', style={'height': '400px', 'overflowY': 'auto'}),
                         # 输入区
-                        fac.AntdInputSearch(
+                        fac.AntdInput(
+                            mode='search',
                             id='chat-input',
                             placeholder="请输入关于透平机械的问题...",
                             enterButton="发送",
@@ -58,4 +59,5 @@ def render_content(menu_access: MenuAccess, **kwargs):
                 # 可以继续添加作业批改、章节总结的Tab...
             ]
         )
+
     ])
