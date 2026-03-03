@@ -39,7 +39,6 @@ def render_content(menu_access: MenuAccess, **kwargs):
                             mode='search',
                             id='chat-input',
                             placeholder="请输入关于透平机械的问题...",
-                            enterButton="发送",
                             size="large"
                         )
                     ])
@@ -61,3 +60,4 @@ def render_content(menu_access: MenuAccess, **kwargs):
         )
 
     ])
+
