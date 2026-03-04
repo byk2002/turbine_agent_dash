@@ -1420,7 +1420,14 @@ class TurbineCourseAgent:
             }
         except Exception as e:
             logger.exception(f"Agent 执行出错: {e}")
-            return {"response": f"Error: {str(e)}", "intent": "error", "session_id": session_id}
+            return {
+    "response": final_state.get("final_response", ""),
+    "intent": final_state.get("intent", IntentType.UNKNOWN).value,
+    "confidence": final_state.get("qa_confidence", 0),
+    "grading": final_state.get("grading_result", {}),
+    "user_profile": final_state.get("user_profile", {}), # 【新增】返回用户最新画像(含 Elo 等级)
+    "session_id": session_id
+}
 
     def generate_questions(
             self,
@@ -1609,4 +1616,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 '''
