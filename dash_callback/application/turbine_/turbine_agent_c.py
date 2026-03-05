@@ -1,10 +1,33 @@
 # src/dash_callback/application/turbine_/turbine_agent_c.py
 import base64
+import os
+import tempfile
+import uuid
 from dash import Input, Output, State, html, dcc, no_update
 from server import app
 from common.turbine_core.instance import turbine_system
 import feffery_antd_components as fac
 
+# 尝试导入文档转换库
+try:
+    import fitz  # PyMuPDF
+except ImportError:
+    fitz = None
+    print("⚠️ 警告: 缺少 PyMuPDF，请运行 pip install PyMuPDF 以支持 PDF转图片")
+
+try:
+    import pythoncom
+    import win32com.client
+except ImportError:
+    pythoncom = None
+    win32com = None
+    print("⚠️ 警告: 缺少 pywin32，请运行 pip install pywin32")
+
+# 🟢 新增：导入 pythoncom 用于多线程 COM 初始化
+try:
+    import pythoncom
+except ImportError:
+    pythoncom = None
 
 @app.callback(
     Output('chat-history-container', 'children'),
@@ -197,32 +220,128 @@ def handle_correction(nClicks, question, text_answer, hw_contents, hw_filename, 
         return no_update
     print(f"==== 成功接收到对比点击：{nClicks} ====")
 
-    # 辅助函数：解析 Base64 文件
+    # 辅助函数 1：解析 Base64 文件并保存为物理临时文件
     def parse_uploaded_file(contents, filename):
         if not contents:
             return None
         content_type, content_string = contents.split(',')
         decoded_bytes = base64.b64decode(content_string)
+
+        ext = os.path.splitext(filename)[1].lower()
+        temp_filename = f"upload_{uuid.uuid4().hex}{ext}"
+        temp_filepath = os.path.join(tempfile.gettempdir(), temp_filename)
+
+        with open(temp_filepath, "wb") as f:
+            f.write(decoded_bytes)
+
         return {
             "filename": filename,
-            "content_type": content_type,
-            "bytes": decoded_bytes,
-            "base64_str": content_string
+            "filepath": temp_filepath,
+            "ext": ext
         }
 
-    # 1. 解析学生作业文件
+    # 🟢 核心新增函数：将 PDF 或 Word 转换为图片列表
+    def convert_doc_to_images(filepath, ext):
+            image_paths = []
+            target_pdf_path = filepath
+
+            # 1. 如果是 Word，先转成 PDF (使用原生 win32com 实现，更稳定)
+            if ext in ['.docx', '.doc']:
+                if not (pythoncom and win32com):
+                    print("未安装 pywin32，无法转换 Word 文档")
+                    return []
+
+                target_pdf_path = filepath.rsplit('.', 1)[0] + '.pdf'
+
+                # 必须转换为严格的绝对路径
+                abs_filepath = os.path.abspath(filepath)
+                abs_target_pdf = os.path.abspath(target_pdf_path)
+
+                word = None
+                try:
+                    # 声明在当前线程使用 COM
+                    pythoncom.CoInitialize()
+
+                    # 🟢 DispatchEx：强制启动一个全新的 Word 独立进程，避免与挂起的僵尸进程冲突
+                    word = win32com.client.DispatchEx("Word.Application")
+                    word.Visible = False
+                    # 🟢 核心：强制关闭所有警告弹窗（如受保护的视图、宏警告等）
+                    word.DisplayAlerts = False
+
+                    # 🟢 只读模式打开，防止文件被占用锁死
+                    doc = word.Documents.Open(abs_filepath, ReadOnly=True, ConfirmConversions=False)
+
+                    # 17 代表 wdFormatPDF
+                    doc.SaveAs(abs_target_pdf, FileFormat=17)
+                    doc.Close()
+                except Exception as e:
+                    print(f"原生 Word 转 PDF 报错: {e}")
+                    return []
+                finally:
+                    if word:
+                        try:
+                            word.Quit()
+                        except:
+                            pass
+                    # 确保资源释放
+                    pythoncom.CoUninitialize()
+
+            # 2. 将 PDF 按页转换为图片
+            if target_pdf_path.endswith('.pdf') and os.path.exists(target_pdf_path):
+                if not fitz:
+                    print("未安装 PyMuPDF(fitz)，无法转换 PDF")
+                    return []
+                try:
+                    # 打开 PDF 文件
+                    doc = fitz.open(target_pdf_path)
+                    for page_num in range(len(doc)):
+                        if page_num >= 10:  # 限制最多转换前 10 页
+                            break
+
+                        page = doc.load_page(page_num)
+                        pix = page.get_pixmap(dpi=150)
+                        img_path = f"{target_pdf_path}_page{page_num}.jpg"
+                        pix.save(img_path)
+                        image_paths.append(img_path)
+                    doc.close()
+                except Exception as e:
+                    print(f"PDF 转图片失败: {e}")
+
+            return image_paths
+
+    # --- 1. 处理学生作业文件 ---
     student_file_data = parse_uploaded_file(hw_contents, hw_filename)
+    student_img_list = []
 
-    # 2. 解析参考答案文件
+    if student_file_data:
+        ext = student_file_data['ext']
+        if ext in ['.png', '.jpg', '.jpeg', '.bmp', '.gif']:
+            student_img_list.append(student_file_data['filepath'])  # 本身是图片
+        elif ext in ['.pdf', '.docx', '.doc']:
+            # 转换为图片列表并合并到数组中
+            converted_imgs = convert_doc_to_images(student_file_data['filepath'], ext)
+            student_img_list.extend(converted_imgs)
+
+    # --- 2. 处理参考答案文件 ---
     standard_file_data = parse_uploaded_file(std_contents, std_filename)
+    standard_img_list = []
 
+    if standard_file_data:
+        ext = standard_file_data['ext']
+        if ext in ['.png', '.jpg', '.jpeg', '.bmp', '.gif']:
+            standard_img_list.append(standard_file_data['filepath'])
+        elif ext in ['.pdf', '.docx', '.doc']:
+            converted_imgs = convert_doc_to_images(standard_file_data['filepath'], ext)
+            standard_img_list.extend(converted_imgs)
+
+    # --- 3. 调用 Core 层 ---
     try:
-        # 将题目、学生文本解答、学生文件、参考答案文件统一交给底层大模型
+        # 现在无论是直接上传的图片，还是由 Word/PDF 转换来的图片，统一都走多模态视觉通道
         result = turbine_system.grade_answer(
-            student_answer=text_answer or "",
-            student_images=[student_file_data['base64_str']] if student_file_data else [],
-            reference="",
-            reference_images=[standard_file_data['base64_str']] if standard_file_data else [],
+            student_answer=text_answer or "",  # 如果用户手填了文本，依然保留
+            student_images=student_img_list,
+            reference="",  # 参考内容全部转图片了，文本置空
+            reference_images=standard_img_list,
             topic=question or ""
         )
         response_text = result.get("response", "批改系统未能返回结果")
