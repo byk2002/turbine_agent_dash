@@ -1035,14 +1035,15 @@ class TurbineCourseAgent:
                     ref_info += f"【参考图片】 (共 {len(reference_images)} 张，见下方)\n"
                 content_blocks.append({"type": "text", "text": ref_info})
 
-                # 添加参考图片 (限制最多 3 张)
-                for img_base64 in reference_images[:3]:
-                    if img_base64:
-                        content_blocks.append({
-                            "type": "image_url",
-                            # 确保这里手动加上了 data 头，大模型才能识别！
-                            "image_url": {"url": f"data:image/jpeg;base64,{img_base64}", "detail": "auto"}
-                        })
+                # 🟢 修改点 1：通过图片路径调用 encode_image 函数，对图片进行压缩及 Base64 转换
+                for img_path in reference_images[:3]:
+                    if img_path:
+                        img_base64 = encode_image(img_path)
+                        if img_base64:
+                            content_blocks.append({
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{img_base64}", "detail": "auto"}
+                            })
 
                 # --- 2. 构建学生作业部分 ---
                 stu_info = "\n\n=== 第二部分：学生作业 ===\n"
@@ -1052,13 +1053,15 @@ class TurbineCourseAgent:
                     stu_info += f"【学生作业图片】 (共 {len(student_images)} 张，见下方)\n"
                 content_blocks.append({"type": "text", "text": stu_info})
 
-                # 添加学生图片 (仅当列表非空时)
-                for img_base64 in student_images[:5]:
-                    if img_base64:
-                        content_blocks.append({
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{img_base64}", "detail": "auto"}
-                        })
+                # 🟢 修改点 2：同样调用 encode_image 处理学生作业的图片路径
+                for img_path in student_images[:5]:
+                    if img_path:
+                        img_base64 = encode_image(img_path)
+                        if img_base64:
+                            content_blocks.append({
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{img_base64}", "detail": "auto"}
+                            })
 
                 # 发送请求
                 messages.append(HumanMessage(content=content_blocks))
