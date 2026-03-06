@@ -45,8 +45,9 @@ class QuestionOutput(BaseModel):
     options: Optional[List[str]] = Field(default_factory=list, description="选择题的选项（如 ['A. xxx', 'B. xxx']），非选择题留空")
     answer: str = Field(description="标准答案")
     explanation: str = Field(description="答案解析")
-    difficulty: str = Field(description="难度: easy/medium/hard")
-    knowledge_point: str = Field(description="考查的知识点")
+    # 🟢 核心修改：使用 Optional[str] + default="..."，彻底绕过 Pydantic 的 missing 严格校验
+    difficulty: Optional[str] = Field(default="medium", description="难度: easy/medium/hard")
+    knowledge_point: Optional[str] = Field(default="综合考点", description="考查的知识点")
 
 class QuestionListOutput(BaseModel):
     questions: List[QuestionOutput] = Field(description="生成的练习题列表")
@@ -859,25 +860,30 @@ class TurbineCourseAgent:
             parser = PydanticOutputParser(pydantic_object=QuestionListOutput)
 
             # 生成提示词
+            # 生成提示词
             gen_prompt = ChatPromptTemplate.from_messages([
                 ("system", """你是透平机械原理课程的出题专家。请根据给定的课程内容和要求，生成高质量的练习题。
-            【出题要求】
-            - 章节/知识点: {chapter}
-            - 题型: {type_desc}
-            - 数量: {count}道
-            - 难度: {difficulty_desc}
+                        【出题要求】
+                        - 章节/知识点: {chapter}
+                        - 题型: {type_desc}
+                        - 数量: {count}道
+                        - 难度: {difficulty_desc}
 
-            【参考资料】
-            {context}
+                        【参考资料】
+                        {context}
 
-            【自适应出题要求】
-            {adaptive_focus}
-            【输出格式要求】
-             {format_instructions}
-             ⚠️ 注意：你必须且只能返回合法的 JSON 格式数据！不要包含任何 Markdown 标记（如 ```json），也不要包含任何前言、后语或解释性文字！
-    """),
+                        【自适应出题要求】
+                        {adaptive_focus}
+
+                        【输出格式要求】
+                         ⚠️ 你的 JSON 中，每一道题都必须严格包含以下 7 个字段，缺一不可：
+                         question_type, question, options, answer, explanation, difficulty, knowledge_point。
+
+                         {format_instructions}
+                         ⚠️ 注意：你必须且只能返回合法的 JSON 格式数据！不要包含任何 Markdown 标记（如 ```json），也不要包含任何前言、后语或解释性文字！
+                """),
                 ("user",
-                 "请生成{count}道关于{chapter}的{type_name}，难度为{difficulty}。\n\n(请务必按照上方要求的 JSON 格式输出结果)")
+                 "请生成{count}道关于{chapter}的{type_name}，难度为{difficulty}。\n\n(请务必按照上方要求的 JSON 格式输出结果，千万不要漏掉 difficulty 和 knowledge_point 字段！)")
             ])
             try:
                 # 3. 将解析器加入 Chain
@@ -1487,10 +1493,11 @@ class TurbineCourseAgent:
     def grade_answer(
             self,
             student_answer: str= "",
-            student_images: List[str] = None, # 新增参数
+            student_images: List[str] = None,
             reference: str = "",
-            reference_images: List[str] = None,  # 新增参数
-            topic: str = ""
+            reference_images: List[str] = None,
+            topic: str = "",
+            session_id: str = "default"  # 👈 1. 新增 session_id 参数，默认值为 "default"
     ) -> Dict[str, Any]:
         """
         批改答案的便捷方法 (支持图片)
@@ -1502,10 +1509,11 @@ class TurbineCourseAgent:
 
         result = self.chat(
             prompt,
+            session_id=session_id,  # 👈 2. 将 session_id 传递给底层的 chat 方法，确保能更新指定用户的画像
             intent=IntentType.GRADE_HOMEWORK,
             student_answer=student_answer,
-            student_images=student_images if student_images else [], # 传递图片
-            reference_images=reference_images if reference_images else [],  # 传递图片
+            student_images=student_images if student_images else [],
+            reference_images=reference_images if reference_images else [],
             reference_content=reference,
             chapter_info=topic
         )
@@ -1538,7 +1546,6 @@ class TurbineCourseAgent:
             "sources": result.get("sources", []),
             "user_profile": result.get("user_profile", {})
         }
-
 
 
 
