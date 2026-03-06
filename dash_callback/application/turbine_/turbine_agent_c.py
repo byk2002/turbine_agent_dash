@@ -190,10 +190,18 @@ def update_standard_status(filename):
 
 
 # ==========================================
-# 回调 5：作业批改
+# 回调 5：作业批改 (多输出：渲染结果 + 清空所有输入与文件)
 # ==========================================
 @app.callback(
-    Output('correction-result-container', 'children'),
+    [
+        Output('correction-result-container', 'children'),
+        Output('correction-question-input', 'value'),  # 清空题目输入框
+        Output('correction-answer-input', 'value'),  # 清空文本答案输入框
+        Output('upload-homework-file', 'contents'),  # 清空学生作业文件内容
+        Output('upload-homework-file', 'filename'),  # 清空学生作业文件名
+        Output('upload-standard-answer-file', 'contents'),  # 清空参考答案文件内容
+        Output('upload-standard-answer-file', 'filename')  # 清空参考答案文件名
+    ],
     Input('correct-btn', 'nClicks'),
     State('correction-question-input', 'value'),
     State('correction-answer-input', 'value'),
@@ -204,9 +212,12 @@ def update_standard_status(filename):
     State('turbine-session-store', 'data'),
     prevent_initial_call=True
 )
-def handle_correction(nClicks, question, text_answer, hw_contents, hw_filename, std_contents, std_filename, session_data):
+def handle_correction(nClicks, question, text_answer, hw_contents, hw_filename, std_contents, std_filename,
+                      session_data):
     if not nClicks:
-        return no_update
+        # 如果未点击，保持 7 个输出都不更新
+        return no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
     print(f"==== 成功接收到对比点击：{nClicks} ====")
 
     session_id = session_data.get('session_id', 'default_user_session') if session_data else 'default_user_session'
@@ -223,46 +234,48 @@ def handle_correction(nClicks, question, text_answer, hw_contents, hw_filename, 
         return {"filename": filename, "filepath": temp_filepath, "ext": ext}
 
     def convert_doc_to_images(filepath, ext):
-            image_paths = []
-            target_pdf_path = filepath
-            if ext in ['.docx', '.doc']:
-                if not (pythoncom and win32com): return []
-                target_pdf_path = filepath.rsplit('.', 1)[0] + '.pdf'
-                abs_filepath = os.path.abspath(filepath)
-                abs_target_pdf = os.path.abspath(target_pdf_path)
-                word = None
-                try:
-                    pythoncom.CoInitialize()
-                    word = win32com.client.DispatchEx("Word.Application")
-                    word.Visible = False
-                    word.DisplayAlerts = False
-                    doc = word.Documents.Open(abs_filepath, ReadOnly=True, ConfirmConversions=False)
-                    doc.SaveAs(abs_target_pdf, FileFormat=17)
-                    doc.Close()
-                except Exception as e:
-                    print(f"原生 Word 转 PDF 报错: {e}")
-                    return []
-                finally:
-                    if word:
-                        try: word.Quit()
-                        except: pass
-                    pythoncom.CoUninitialize()
+        image_paths = []
+        target_pdf_path = filepath
+        if ext in ['.docx', '.doc']:
+            if not (pythoncom and win32com): return []
+            target_pdf_path = filepath.rsplit('.', 1)[0] + '.pdf'
+            abs_filepath = os.path.abspath(filepath)
+            abs_target_pdf = os.path.abspath(target_pdf_path)
+            word = None
+            try:
+                pythoncom.CoInitialize()
+                word = win32com.client.DispatchEx("Word.Application")
+                word.Visible = False
+                word.DisplayAlerts = False
+                doc = word.Documents.Open(abs_filepath, ReadOnly=True, ConfirmConversions=False)
+                doc.SaveAs(abs_target_pdf, FileFormat=17)
+                doc.Close()
+            except Exception as e:
+                print(f"原生 Word 转 PDF 报错: {e}")
+                return []
+            finally:
+                if word:
+                    try:
+                        word.Quit()
+                    except:
+                        pass
+                pythoncom.CoUninitialize()
 
-            if target_pdf_path.endswith('.pdf') and os.path.exists(target_pdf_path):
-                if not fitz: return []
-                try:
-                    doc = fitz.open(target_pdf_path)
-                    for page_num in range(len(doc)):
-                        if page_num >= 10: break
-                        page = doc.load_page(page_num)
-                        pix = page.get_pixmap(dpi=150)
-                        img_path = f"{target_pdf_path}_page{page_num}.jpg"
-                        pix.save(img_path)
-                        image_paths.append(img_path)
-                    doc.close()
-                except Exception as e:
-                    print(f"PDF 转图片失败: {e}")
-            return image_paths
+        if target_pdf_path.endswith('.pdf') and os.path.exists(target_pdf_path):
+            if not fitz: return []
+            try:
+                doc = fitz.open(target_pdf_path)
+                for page_num in range(len(doc)):
+                    if page_num >= 10: break
+                    page = doc.load_page(page_num)
+                    pix = page.get_pixmap(dpi=150)
+                    img_path = f"{target_pdf_path}_page{page_num}.jpg"
+                    pix.save(img_path)
+                    image_paths.append(img_path)
+                doc.close()
+            except Exception as e:
+                print(f"PDF 转图片失败: {e}")
+        return image_paths
 
     student_file_data = parse_uploaded_file(hw_contents, hw_filename)
     student_img_list = []
@@ -296,7 +309,11 @@ def handle_correction(nClicks, question, text_answer, hw_contents, hw_filename, 
         print(f"作业批改调用出错: {e}")
         response_text = f"批改失败，系统抛出异常: {str(e)}"
 
-    return html.Div([
+    # 渲染结果的 UI 组件
+    result_ui = html.Div([
         html.H4("批改与对比结果：", style={'color': '#cf1322'}),
-        dcc.Markdown(response_text)
+        dcc.Markdown(response_text, mathjax=True)  # 同样开启 mathjax 防止公式渲染报错
     ], style={'padding': '20px', 'backgroundColor': '#fff2f0', 'border': '1px solid #ffa39e', 'borderRadius': '8px'})
+
+    # 返回 7 个值：第 1 个更新结果面板，后 6 个 None 用于物理清空所有的文本框和文件上传组件
+    return result_ui, None, None, None, None, None, None
