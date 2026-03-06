@@ -390,10 +390,13 @@ class TurbineCourseAgent:
     # --------------------------------
     def _intent_classifier_node(self, state: AgentState) -> AgentState:
         """意图识别节点"""
-        """意图识别节点"""
         # ✅ 新增拦截逻辑：如果已经明确了意图，直接跳过大模型识别
-        if state.get("intent") and state["intent"] != IntentType.UNKNOWN:
-            logger.info(f"🎯 按钮直接触发，使用预设意图: {state['intent'].value}，跳过大模型猜想")
+        current_intent = state.get("intent")
+        # 兼容枚举类型和字符串类型的判断
+        if current_intent and current_intent != IntentType.UNKNOWN and current_intent != "unknown":
+            # 兼容 .value 获取方式，防止序列化为字符串后报错
+            intent_name = getattr(current_intent, "value", str(current_intent))
+            logger.info(f"🎯 按钮直接触发，使用预设意图: {intent_name}，跳过大模型猜想")
             return state
         user_input = state["user_input"]
 
@@ -1535,6 +1538,7 @@ class TurbineCourseAgent:
             "sources": result.get("sources", []),
             "user_profile": result.get("user_profile", {})
         }
+
 
 
 
