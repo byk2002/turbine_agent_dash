@@ -1507,3 +1507,34 @@ class TurbineCourseAgent:
             chapter_info=topic
         )
         return result
+
+    def ask_question(
+            self,
+            question: str,
+            session_id: str = "default",
+            **kwargs
+    ) -> Dict[str, Any]:
+        """
+        直接进行专业问答的便捷方法，跳过大模型意图识别流程，加快响应速度
+        Args:
+            question: 用户的问题
+            session_id: 会话ID，用于保持上下文和用户画像
+            **kwargs: 其他可能需要传递的参数（如 chapter_info 等）
+        """
+        result = self.chat(
+            user_input=question,
+            session_id=session_id,
+            intent=IntentType.QA,  # 显式指定为问答意图，跳过意图识别大模型调用
+            **kwargs
+        )
+
+        # 提取并返回精简后的结果，与原 chat 返回结构保持一致
+        return {
+            "response": result.get("response", ""),
+            "confidence": result.get("confidence", 0),
+            "sources": result.get("sources", []),
+            "user_profile": result.get("user_profile", {})
+        }
+
+
+
