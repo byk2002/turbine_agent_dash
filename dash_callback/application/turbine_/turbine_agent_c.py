@@ -55,7 +55,8 @@ def handle_qa(nClicksSearch, user_input, chat_history, session_data):
 
     # 🔴 核心融合点：调用 Core 层
     try:
-        result = turbine_system.chat(user_input=user_input, session_id=session_id)
+        # 修改为调用 ask_question，明确传递问答意图
+        result = turbine_system.ask_question(question=user_input, session_id=session_id)
         response_text = result.get('response', '系统开小差了')
     except Exception as e:
         print(f"智能问答出错: {e}")
@@ -353,3 +354,4 @@ def handle_correction(nClicks, question, text_answer, hw_contents, hw_filename, 
         html.H4("批改与对比结果：", style={'color': '#cf1322'}),
         dcc.Markdown(response_text)
     ], style={'padding': '20px', 'backgroundColor': '#fff2f0', 'border': '1px solid #ffa39e', 'borderRadius': '8px'})
+
