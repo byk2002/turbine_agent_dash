@@ -7,7 +7,7 @@ from dash import html, dcc
 import feffery_antd_components as fac
 # 引入大模型实例，用于读取评分
 from common.turbine_core.instance import turbine_system
-access_metas = ('透平智能助手-页面',)
+access_metas = ('透平教学智能体-页面',)
 
 title = "智能助手页面"
 icon = None
@@ -39,7 +39,7 @@ def render_content(menu_access: MenuAccess, **kwargs):
         # 保存真实的用户 session_id 给回调使用
         dcc.Store(id='turbine-session-store', data={'session_id': session_id}),
 
-        fac.AntdTitle("⚙️ 透平机械原理智能教学助手", level=2, style={'marginBottom': '20px'}),
+        fac.AntdTitle("⚙️ 透平机械原理教学智能体", level=2, style={'marginBottom': '20px'}),
 
         # ===== 🌟 用户画像与评分展示面板 (纯手工 Flexbox 完美居中版) =====
         fac.AntdCard(
