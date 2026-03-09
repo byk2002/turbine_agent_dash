@@ -812,138 +812,142 @@ class TurbineCourseAgent:
             }
 
     def _question_generator_node(self, state: AgentState) -> AgentState:
-            """练习题生成节点"""
-            chapter_info = state.get("chapter_info", "透平机械原理")
-            question_type = state.get("question_type", "short_answer")
-            question_count = state.get("question_count", 5)
-            difficulty = state.get("difficulty", "medium")
-            retrieved_docs = state.get("retrieved_docs", [])
-            retry_count = state.get("retry_count", 0)
-            last_error = state.get("error_message", "")
+                """练习题生成节点"""
+                chapter_info = state.get("chapter_info", "透平机械原理")
+                question_type = state.get("question_type", "short_answer")
+                question_count = state.get("question_count", 5)
+                difficulty = state.get("difficulty", "medium")
+                retrieved_docs = state.get("retrieved_docs", [])
+                retry_count = state.get("retry_count", 0)
+                last_error = state.get("error_message", "")
 
-            # === 【核心修改开始】 ===
-            # 随机采样策略：从大量检索结果中随机选取一部分作为上下文
-            # 这样每次生成题目时，参考的侧重点都会不同
-            # 设定 LLM 上下文能容纳的片段数 (例如 8 个)
-            context_window_size = 5
-            if len(retrieved_docs) > context_window_size:
-                # 从检索到的文档池中随机采样
-                selected_docs = random.sample(retrieved_docs, context_window_size)
-                logger.info(f"🎲 已从 {len(retrieved_docs)} 个文档中随机采样 {context_window_size} 个用于出题")
-            else:
-                selected_docs = retrieved_docs
-            # 构建上下文
-            context = "\n\n".join([doc["content"] for doc in selected_docs])
+                # === 【核心修改开始】 ===
+                # 随机采样策略：从大量检索结果中随机选取一部分作为上下文
+                # 设定 LLM 上下文能容纳的片段数 (例如 8 个)
+                context_window_size = 5
+                if len(retrieved_docs) > context_window_size:
+                    # 从检索到的文档池中随机采样
+                    selected_docs = random.sample(retrieved_docs, context_window_size)
+                    logger.info(f"🎲 已从 {len(retrieved_docs)} 个文档中随机采样 {context_window_size} 个用于出题")
+                else:
+                    selected_docs = retrieved_docs
+                # 构建上下文
+                context = "\n\n".join([doc["content"] for doc in selected_docs])
 
-            user_profile = state.get("user_profile", {})
-            weak_points = user_profile.get("weak_points", [])
+                user_profile = state.get("user_profile", {})
+                weak_points = user_profile.get("weak_points", [])
 
-            # 自适应出题指令
-            adaptive_focus = ""
-            if weak_points:
-                adaptive_focus = f"注意：用户在以下知识点存在薄弱：{', '.join(weak_points)}。请在生成的题目中重点考察这些内容，帮助用户巩固。"
+                # 自适应出题指令
+                adaptive_focus = ""
+                if weak_points:
+                    adaptive_focus = f"注意：用户在以下知识点存在薄弱：{', '.join(weak_points)}。请在生成的题目中重点考察这些内容，帮助用户巩固。"
 
-            # 题型说明
-            type_instructions = {
-                "choice": "选择题（单选），需要提供4个选项A/B/C/D",
-                "fill_blank": "填空题，用___表示空白处",
-                "short_answer": "简答题，需要简短回答（50-150字）",
-                "calculation": "计算题，需要给出计算步骤和答案"
-            }
-
-            difficulty_desc = {
-                "easy": "基础概念题，直接考查定义和基本原理",
-                "medium": "中等难度，需要理解和简单应用",
-                "hard": "较难，需要综合分析和灵活运用"
-            }
-
-            parser = PydanticOutputParser(pydantic_object=QuestionListOutput)
-
-            # 生成提示词
-            # 生成提示词
-            gen_prompt = ChatPromptTemplate.from_messages([
-                ("system", """你是透平机械原理课程的出题专家。请根据给定的课程内容和要求，生成高质量的练习题。
-                        【出题要求】
-                        - 章节/知识点: {chapter}
-                        - 题型: {type_desc}
-                        - 数量: {count}道
-                        - 难度: {difficulty_desc}
-
-                        【参考资料】
-                        {context}
-
-                        【自适应出题要求】
-                        {adaptive_focus}
-
-                        【输出格式要求】
-                         ⚠️ 你的 JSON 中，每一道题都必须严格包含以下 7 个字段，缺一不可：
-                         question_type, question, options, answer, explanation, difficulty, knowledge_point。
-
-                         {format_instructions}
-                         ⚠️ 注意：你必须且只能返回合法的 JSON 格式数据！不要包含任何 Markdown 标记（如 ```json），也不要包含任何前言、后语或解释性文字！
-                """),
-                ("user",
-                 "请生成{count}道关于{chapter}的{type_name}，难度为{difficulty}。\n\n(请务必按照上方要求的 JSON 格式输出结果，千万不要漏掉 difficulty 和 knowledge_point 字段！)")
-            ])
-            try:
-                # 3. 将解析器加入 Chain
-                chain = gen_prompt | self.llm | parser
-
-                diff_text = difficulty_desc.get(difficulty, "中等难度，需要理解和简单应用")
-
-                # 4. 传入 format_instructions
-                parsed_result = chain.invoke({
-                    "chapter": chapter_info,
-                    "type_desc": type_instructions.get(question_type, "简答题"),
-                    "type_name": question_type,
-                    "count": question_count,
-                    "difficulty": difficulty,
-                    "context": context if context else "（无额外参考资料，请基于透平机械原理通用知识出题）",
-                    "difficulty_desc": diff_text,
-                    "adaptive_focus": adaptive_focus,
-                    "format_instructions": parser.get_format_instructions()  # 新增参数
-                })
-
-                questions = []
-                if parsed_result and parsed_result.questions:
-                    for q in parsed_result.questions:
-                        q_dict = getattr(q, "model_dump", q.dict)()
-                        questions.append(q_dict)
-
-                logger.info(f"成功生成 {len(questions)} 道练习题 (尝试次数: {retry_count + 1})")
-
-                return {
-                    **state,
-                    "generated_questions": questions,
-                    "error_message": "",
-                    "difficulty": difficulty,
-                    "retry_count": 0
+                # 题型说明
+                type_instructions = {
+                    "choice": "选择题（单选），需要提供4个选项A/B/C/D",
+                    "fill_blank": "填空题，用___表示空白处",
+                    "short_answer": "简答题，需要简短回答（50-150字）",
+                    "calculation": "计算题，需要给出计算步骤和答案"
                 }
 
-            except Exception as e:
-                error_msg = str(e)
-                logger.error(f"生成练习题结构化解析失败 (第 {retry_count + 1} 次): {error_msg}")
-                # 【新增容错机制】尝试抢救纯文本
-                if "Invalid json output:" in error_msg:
-                    extracted_text = error_msg.split("Invalid json output:", 1)[1].strip()
-                    if "For troubleshooting" in extracted_text:
-                        extracted_text = extracted_text.split("For troubleshooting")[0].strip()
+                difficulty_desc = {
+                    "easy": "基础概念题，直接考查定义和基本原理",
+                    "medium": "中等难度，需要理解和简单应用",
+                    "hard": "较难，需要综合分析和灵活运用"
+                }
+
+                parser = PydanticOutputParser(pydantic_object=QuestionListOutput)
+
+                # 🟢 核心修复开始：提取 JSON 格式说明，并使用独立的 SystemMessage 包裹
+                format_instructions = parser.get_format_instructions()
+                format_msg_content = f"""【输出格式要求】
+    ⚠️ 你的 JSON 中，每一道题都必须严格包含以下 7 个字段，缺一不可：
+    question_type, question, options, answer, explanation, difficulty, knowledge_point。
+
+    {format_instructions}
+
+    ⚠️ 注意：你必须且只能返回合法的 JSON 格式数据！不要包含任何 Markdown 标记（如 ```json），也不要包含任何前言、后语或解释性文字！"""
+
+                # 生成提示词
+                gen_prompt = ChatPromptTemplate.from_messages([
+                    ("system", """你是透平机械原理课程的出题专家。请根据给定的课程内容和要求，生成高质量的练习题。
+                            【出题要求】
+                            - 章节/知识点: {chapter}
+                            - 题型: {type_desc}
+                            - 数量: {count}道
+                            - 难度: {difficulty_desc}
+
+                            【参考资料】
+                            {context}
+
+                            【自适应出题要求】
+                            {adaptive_focus}
+                    """),
+                    # 🟢 将输出格式强制作为原生 SystemMessage 插入，彻底阻断模板的大括号解析
+                    SystemMessage(content=format_msg_content),
+                    ("user",
+                     "请生成{count}道关于{chapter}的{type_name}，难度为{difficulty}。\n\n(请务必按照上方要求的 JSON 格式输出结果，千万不要漏掉 difficulty 和 knowledge_point 字段！)")
+                ])
+                # 🟢 核心修复结束
+
+                try:
+                    # 3. 将解析器加入 Chain
+                    chain = gen_prompt | self.llm | parser
+
+                    diff_text = difficulty_desc.get(difficulty, "中等难度，需要理解和简单应用")
+
+                    # 4. 传入参数 (注意：这里不再传入 format_instructions，因为它已经被提前包裹进去了)
+                    parsed_result = chain.invoke({
+                        "chapter": chapter_info,
+                        "type_desc": type_instructions.get(question_type, "简答题"),
+                        "type_name": question_type,
+                        "count": question_count,
+                        "difficulty": difficulty,
+                        "context": context if context else "（无额外参考资料，请基于透平机械原理通用知识出题）",
+                        "difficulty_desc": diff_text,
+                        "adaptive_focus": adaptive_focus
+                    })
+
+                    questions = []
+                    if parsed_result and parsed_result.questions:
+                        for q in parsed_result.questions:
+                            q_dict = getattr(q, "model_dump", q.dict)()
+                            questions.append(q_dict)
+
+                    logger.info(f"成功生成 {len(questions)} 道练习题 (尝试次数: {retry_count + 1})")
 
                     return {
                         **state,
-                        # 将纯文本塞入 raw_text，后续的 formatter 节点会自动将其直接显示给用户
-                        "generated_questions": [{"raw_text": extracted_text}],
-                        "error_message": "",  # 清空错误，视为抢救成功，不再重试
+                        "generated_questions": questions,
+                        "error_message": "",
                         "difficulty": difficulty,
                         "retry_count": 0
                     }
 
-                return {
-                    **state,
-                    "generated_questions": [{"raw_text": f"生成失败", "parse_error": error_msg}],
-                    "error_message": f"结构化解析错误: {error_msg}",
-                    "retry_count": retry_count + 1
-                }
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.error(f"生成练习题结构化解析失败 (第 {retry_count + 1} 次): {error_msg}")
+                    # 【新增容错机制】尝试抢救纯文本
+                    if "Invalid json output:" in error_msg:
+                        extracted_text = error_msg.split("Invalid json output:", 1)[1].strip()
+                        if "For troubleshooting" in extracted_text:
+                            extracted_text = extracted_text.split("For troubleshooting")[0].strip()
+
+                        return {
+                            **state,
+                            # 将纯文本塞入 raw_text，后续的 formatter 节点会自动将其直接显示给用户
+                            "generated_questions": [{"raw_text": extracted_text}],
+                            "error_message": "",  # 清空错误，视为抢救成功，不再重试
+                            "difficulty": difficulty,
+                            "retry_count": 0
+                        }
+
+                    return {
+                        **state,
+                        "generated_questions": [{"raw_text": f"生成失败", "parse_error": error_msg}],
+                        "error_message": f"结构化解析错误: {error_msg}",
+                        "retry_count": retry_count + 1
+                    }
 
     def _homework_grader_node(self, state: AgentState) -> AgentState:
             """作业批改节点"""
