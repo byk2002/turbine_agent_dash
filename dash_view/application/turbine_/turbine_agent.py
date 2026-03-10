@@ -9,7 +9,7 @@ import feffery_antd_components as fac
 from common.turbine_core.instance import turbine_system
 access_metas = ('透平教学智能体-页面',)
 
-title = "智能助手页面"
+title = "透平教学智能体"
 icon = None
 order = 3
 
@@ -272,7 +272,47 @@ def render_content(menu_access: MenuAccess, **kwargs):
                         ),
                         html.Div(id='correction-result-container', style={'marginTop': '20px'})
                     ], style={'padding': '10px'})
+                },
+                # 👇 这里开始是新增的知识库管理 Tab
+                {
+                    'label': '📚 知识库管理',
+                    'key': 'kb-tab',
+                    'children': html.Div([
+                        fac.AntdCard(
+                            title="上传新文档到知识库",
+                            style={'marginBottom': '20px'},
+                            children=[
+                                dcc.Upload(
+                                    id='kb-upload-file',
+                                    children=html.Div([
+                                        html.Div("📁 点击或拖拽文件上传",
+                                                 style={'fontWeight': 'bold', 'fontSize': '14px'}),
+                                        html.Div("(支持 PDF, Word, TXT, 图片等)",
+                                                 style={'color': '#888', 'marginTop': '5px', 'fontSize': '12px'})
+                                    ]),
+                                    style={
+                                        'width': '100%', 'height': '80px', 'lineHeight': 'normal',
+                                        'borderWidth': '1px', 'borderStyle': 'dashed', 'borderRadius': '8px',
+                                        'borderColor': '#1677ff', 'textAlign': 'center', 'paddingTop': '15px',
+                                        'backgroundColor': '#e6f4ff', 'cursor': 'pointer'
+                                    },
+                                    multiple=False
+                                ),
+                                html.Div(id='kb-upload-status',
+                                         style={'color': '#1677ff', 'marginTop': '10px', 'fontSize': '14px'})
+                            ]
+                        ),
+
+                        fac.AntdCard(
+                            title="现有知识库文档",
+                            extra=fac.AntdButton("🔄 刷新列表", id="kb-refresh-btn", type="primary"),
+                            children=[
+                                html.Div(id='kb-document-list-container', style={'marginTop': '10px'})
+                            ]
+                        )
+                    ], style={'padding': '10px'})
                 }
+
             ]
         )
     ])
