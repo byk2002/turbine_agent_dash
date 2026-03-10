@@ -35,56 +35,122 @@ except ImportError:
 
 
 # ==========================================
-# 回调 1：智能问答 (双输出：结果上屏 + 清空输入框)
+# 🟢 回调 1：智能问答 (多用户历史隔离 + 持久化 + 气泡UI)
 # ==========================================
 @app.callback(
-    [Output('chat-history-container', 'children'),
+    [Output('chat-history-store', 'data'),
+     Output('chat-history-container', 'children'),
      Output('chat-input', 'value')],
-    Input('chat-input', 'nClicksSearch'),
-    State('chat-input', 'value'),
-    State('chat-history-container', 'children'),
-    State('turbine-session-store', 'data'),
-    prevent_initial_call=True
+    [Input('chat-input', 'nClicksSearch'),
+     Input('clear-chat-btn', 'nClicks')],
+    [State('chat-input', 'value'),
+     State('chat-history-store', 'data'),
+     State('turbine-session-store', 'data')],
+    prevent_initial_call=False
 )
-def handle_qa(nClicksSearch, user_input, chat_history, session_data):
-    if not nClicksSearch or not user_input:
-        return no_update, no_update
+def handle_qa_and_history(nClicksSearch, clearClicks, user_input, chat_store, session_data):
+    ctx_id = ctx.triggered_id
 
-    print(f"==== 成功接收到回答点击/回车：{nClicksSearch} ====")
+    # 1. 初始化整个存储字典
+    chat_store = chat_store or {}
+    # 如果本地缓存里有以前旧版本残留的列表数据，直接清空重置为字典，防止报错
+    if isinstance(chat_store, list):
+        chat_store = {}
 
-    chat_history = chat_history or []
-    if not isinstance(chat_history, list):
-        chat_history = [chat_history]
-
+    # 获取当前用户的 session_id (即用户名)
     session_id = session_data.get('session_id', 'default_user_session') if session_data else 'default_user_session'
 
-    try:
-        result = turbine_system.ask_question(question=user_input, session_id=session_id)
-        response_text = result.get('response', '系统开小差了')
-    except Exception as e:
-        print(f"智能问答出错: {e}")
-        response_text = f"抱歉，系统发生错误: {str(e)}"
+    # 2. 从字典中提取当前专属用户的历史记录
+    user_history = chat_store.get(session_id, [])
 
-    chat_group = html.Div([
-        html.Div(f"🧑‍🎓 用户: {user_input}", style={
-            'textAlign': 'right', 'margin': '10px 0', 'color': '#1677ff', 'fontWeight': 'bold'
-        }),
-        html.Div([
-            html.Span("🤖 助手: ", style={'fontWeight': 'bold', 'color': '#52c41a'}),
-            html.Div(
-                dcc.Markdown(response_text, mathjax=True),
-                style={'marginTop': '8px'}
+    # 动作 A: 触发了“清空历史”按钮
+    if ctx_id == 'clear-chat-btn':
+        # 尝试调用大模型底层的记忆清理接口（如果有）
+        if hasattr(turbine_system, 'clear_memory'):
+            try:
+                turbine_system.clear_memory(session_id)
+            except Exception:
+                pass
+
+        # 仅清空当前用户的记录，并存回字典
+        chat_store[session_id] = []
+        return chat_store, [], None
+
+    # 动作 B: 用户发送了新消息
+    if ctx_id == 'chat-input' and user_input:
+        print(f"==== 接收到 {session_id} 的问题：{user_input} ====")
+        try:
+            result = turbine_system.ask_question(question=user_input, session_id=session_id)
+            response_text = result.get('response', '系统开小差了')
+        except Exception as e:
+            print(f"智能问答出错: {e}")
+            response_text = f"抱歉，系统发生错误: {str(e)}"
+
+        # 将新对话追加到当前用户的列表中
+        user_history.append({'role': 'user', 'content': user_input})
+        user_history.append({'role': 'assistant', 'content': response_text})
+
+        # 将更新后的专属列表写回大字典
+        chat_store[session_id] = user_history
+
+    # 动作 C: 遍历【当前用户】的历史记录并生成 UI
+    chat_ui = []
+    for msg in user_history:
+        if msg['role'] == 'user':
+            chat_ui.append(
+                html.Div(
+                    html.Div([
+                        html.Span("🧑‍🎓 我", style={'fontSize': '12px', 'color': '#8c8c8c', 'marginBottom': '4px',
+                                                   'display': 'block', 'textAlign': 'right'}),
+                        html.Div(msg['content'], style={
+                            'display': 'inline-block', 'backgroundColor': '#1677ff', 'color': '#fff',
+                            'padding': '10px 14px', 'borderRadius': '12px 0 12px 12px', 'maxWidth': '85%',
+                            'textAlign': 'left', 'wordBreak': 'break-word', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'
+                        })
+                    ], style={'textAlign': 'right', 'margin': '10px 0', 'alignSelf': 'flex-end'})
+                )
             )
-        ], style={
-            'textAlign': 'left', 'margin': '10px 0 20px 0', 'backgroundColor': '#f6ffed',
-            'border': '1px solid #b7eb8f', 'padding': '12px', 'borderRadius': '8px'
-        })
-    ])
+        else:
+            chat_ui.append(
+                html.Div(
+                    html.Div([
+                        html.Span("🤖 智能助手", style={'fontSize': '12px', 'color': '#8c8c8c', 'marginBottom': '4px',
+                                                       'display': 'block'}),
+                        html.Div(dcc.Markdown(msg['content'], mathjax=True), style={
+                            'display': 'inline-block', 'backgroundColor': '#ffffff', 'color': '#333',
+                            'padding': '10px 14px', 'borderRadius': '0 12px 12px 12px', 'maxWidth': '85%',
+                            'border': '1px solid #e8e8e8', 'boxShadow': '0 2px 4px rgba(0,0,0,0.05)',
+                            'textAlign': 'left', 'wordBreak': 'break-word'
+                        })
+                    ], style={'textAlign': 'left', 'margin': '10px 0', 'alignSelf': 'flex-start'})
+                )
+            )
 
-    chat_history.insert(0, chat_group)
-    return chat_history, None
+    new_input_val = None if ctx_id == 'chat-input' else no_update
 
+    # 返回更新后的大字典 chat_store 给前端缓存
+    return chat_store, chat_ui, new_input_val
 
+# ==========================================
+# 🟢 新增回调：收到新消息时，聊天窗口自动滑倒最底部
+# ==========================================
+app.clientside_callback(
+    """
+    function(children) {
+        var container = document.getElementById('chat-history-container');
+        if (container) {
+            // 设置延迟保证新元素已经完全渲染
+            setTimeout(function() {
+                container.scrollTop = container.scrollHeight;
+            }, 100);
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output('chat-scroll-dummy', 'children'),
+    Input('chat-history-container', 'children'),
+    prevent_initial_call=False
+)
 # ==========================================
 # 回调 2：生成练习题 (单输出：渲染结果区域)
 # ==========================================
