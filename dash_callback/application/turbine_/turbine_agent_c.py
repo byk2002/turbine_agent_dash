@@ -324,66 +324,51 @@ def handle_correction(nClicks, question, text_answer, hw_contents, hw_filename, 
 
 
 # ==========================================
-# 回调 6：知识库文件上传并解析加入 RAG
-# ==========================================
-# ==========================================
-# 回调 6：知识库文件上传并解析加入 RAG
+# 回调 6 & 7：知识库综合管理 (上传、刷新、动态删除)
 # ==========================================
 @app.callback(
-    Output('kb-upload-status', 'children'),
+    [Output('kb-upload-status', 'children'),
+     Output('kb-document-list-container', 'children')],
     Input('kb-upload-file', 'contents'),
-    State('kb-upload-file', 'filename'),
-    prevent_initial_call=True
-)
-def handle_kb_upload(contents, filename):
-    if not contents:
-        return no_update
-
-    try:
-        # 将前端上传的 base64 存为本地固定目录下的文件，供 RAG 提取
-        content_type, content_string = contents.split(',')
-        decoded_bytes = base64.b64decode(content_string)
-
-        # 🛑 修改点：将保存路径由系统的临时目录(tempfile.gettempdir())改为本地项目下的特定路径
-        # 这里设置为项目根目录下的 user_data/kb_uploads 文件夹
-        save_dir = os.path.join(os.getcwd(), "user_data", "knowledge_base")
-
-        # 确保目录存在，如果不存在则自动创建
-        os.makedirs(save_dir, exist_ok=True)
-        save_path = os.path.join(save_dir, filename)
-
-        with open(save_path, "wb") as f:
-            f.write(decoded_bytes)
-
-        # 调用大模型/RAG 系统的 add_document 方法
-        turbine_system.kb_adapter.add_document(save_path)
-
-        return html.Span(f"✅ 文件 {filename} 已成功保存至本地 {save_path} 并加入知识库！请点击刷新列表。",
-                         style={'color': '#52c41a', 'fontWeight': 'bold'})
-    except Exception as e:
-        print(f"知识库添加文件失败: {e}")
-        return html.Span(f"❌ 文件 {filename} 添加失败: {str(e)}", style={'color': '#cf1322'})
-
-
-# ==========================================
-# 回调 7：获取知识库列表 与 动态删除文件
-# ==========================================
-@app.callback(
-    Output('kb-document-list-container', 'children'),
     Input('kb-refresh-btn', 'nClicks'),
     Input({'type': 'kb-delete-btn', 'index': ALL}, 'confirmCounts'),
+    State('kb-upload-file', 'filename'),
     prevent_initial_call=False
 )
-def refresh_or_delete_kb(refresh_clicks, delete_counts):
-    # 👇 加入调试日志，随时可以看到前端是否有发来请求
-    print("========== [DEBUG] 回调被触发: refresh_or_delete_kb ==========")
+def handle_kb_management(contents, refresh_clicks, delete_counts, filename):
+    print("========== [DEBUG] 回调被触发: handle_kb_management ==========")
     triggered_id = ctx.triggered_id
-    print(f"[DEBUG] 触发的 ID: {triggered_id}")
 
-    # 1. 检查是否是由于点击了“气泡弹窗的确认按钮”触发的
-    if triggered_id and isinstance(triggered_id, dict) and triggered_id.get('type') == 'kb-delete-btn':
+    # 默认状态：不更新上传提示区域
+    status_update = no_update
 
-        # 安全检查：找出对应的触发项的值是否有效 (即 confirmCounts 是否大于 0)
+    # ------------------------------------------
+    # 1. 处理文件上传逻辑
+    # ------------------------------------------
+    if triggered_id == 'kb-upload-file' and contents:
+        try:
+            content_type, content_string = contents.split(',')
+            decoded_bytes = base64.b64decode(content_string)
+
+            save_dir = os.path.join(os.getcwd(), "user_data", "knowledge_base")
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, filename)
+
+            with open(save_path, "wb") as f:
+                f.write(decoded_bytes)
+
+            turbine_system.kb_adapter.add_document(save_path)
+            # 上传成功，更新提示文字
+            status_update = html.Span(f"✅ 文件 {filename} 已成功保存至本地并加入知识库！",
+                                      style={'color': '#52c41a', 'fontWeight': 'bold'})
+        except Exception as e:
+            print(f"知识库添加文件失败: {e}")
+            status_update = html.Span(f"❌ 文件 {filename} 添加失败: {str(e)}", style={'color': '#cf1322'})
+
+    # ------------------------------------------
+    # 2. 处理文件删除逻辑
+    # ------------------------------------------
+    elif triggered_id and isinstance(triggered_id, dict) and triggered_id.get('type') == 'kb-delete-btn':
         is_confirmed = False
         for t in ctx.triggered:
             if 'confirmCounts' in t['prop_id'] and t.get('value'):
@@ -391,7 +376,6 @@ def refresh_or_delete_kb(refresh_clicks, delete_counts):
                 break
 
         if is_confirmed:
-            # 1. 使用 base64 解码获取真实的路径
             encoded_path = triggered_id['index']
             file_path_to_delete = base64.b64decode(encoded_path).decode('utf-8')
 
@@ -403,8 +387,6 @@ def refresh_or_delete_kb(refresh_clicks, delete_counts):
                 # ==========================================
                 # 🟢 终极“幽灵记录”抹除术（内存 + 硬盘 + 物理文件三杀）
                 # ==========================================
-
-                # --- A. 内存级深层大扫除 ---
                 def scrub_memory_dict(target_dict):
                     if not isinstance(target_dict, dict): return
                     zombie_keys = [k for k in target_dict.keys() if
@@ -413,9 +395,8 @@ def refresh_or_delete_kb(refresh_clicks, delete_counts):
                         target_dict.pop(zk, None)
                         print(f"🔧 内存清理：已成功抹除底层字典键名 -> {zk}")
 
-                # 兼容 'documents' 和 'doc_metadata'
                 docs_info = adapter.list_documents()
-                for key_name in ['documents', 'doc_metadata']:
+                for key_name in ['documents', 'doc_metadata', 'file_hashes']:
                     if isinstance(docs_info, dict) and key_name in docs_info:
                         scrub_memory_dict(docs_info[key_name])
 
@@ -425,7 +406,7 @@ def refresh_or_delete_kb(refresh_clicks, delete_counts):
                         attr_val = getattr(adapter, attr_name)
                         if isinstance(attr_val, dict):
                             scrub_memory_dict(attr_val)
-                            for key_name in ['documents', 'doc_metadata']:
+                            for key_name in ['documents', 'doc_metadata', 'file_hashes']:
                                 if key_name in attr_val and isinstance(attr_val[key_name], dict):
                                     scrub_memory_dict(attr_val[key_name])
                     except Exception:
@@ -438,7 +419,6 @@ def refresh_or_delete_kb(refresh_clicks, delete_counts):
                         except Exception:
                             pass
 
-                # --- B. 硬盘级物理超度 JSON 元数据 ---
                 kb_dir = os.path.join(os.getcwd(), "user_data", "knowledge_base")
                 upload_dir = os.path.join(os.getcwd(), "user_data", "kb_uploads")
 
@@ -450,9 +430,8 @@ def refresh_or_delete_kb(refresh_clicks, delete_counts):
                                 data = json.load(f)
                             modified = False
 
-                            # 🎯 修复核心：动态检查 'documents' 或 'doc_metadata'
                             if isinstance(data, dict):
-                                for root_key in ['documents', 'doc_metadata']:
+                                for root_key in ['documents', 'doc_metadata', 'file_hashes']:
                                     if root_key in data and isinstance(data[root_key], dict):
                                         d_dict = data[root_key]
                                         zombie_keys = [k for k in d_dict.keys() if
@@ -468,14 +447,11 @@ def refresh_or_delete_kb(refresh_clicks, delete_counts):
                         except Exception as e:
                             print(f"JSON 修改错误: {e}")
 
-                # --- C. 物理删除原 PDF/Word 文件 ---
                 try:
-                    # 1. 尝试直接删除完整路径
                     if os.path.exists(file_path_to_delete):
                         os.remove(file_path_to_delete)
                         print(f"🗑️ 物理文件清理：已彻底删除源文件 -> {file_path_to_delete}")
 
-                    # 2. 为防 Windows 路径大小写导致找不到，再做一次目录地毯式搜索删除
                     base_name = os.path.basename(file_path_to_delete)
                     for target_dir in [kb_dir, upload_dir]:
                         if os.path.exists(target_dir):
@@ -486,17 +462,22 @@ def refresh_or_delete_kb(refresh_clicks, delete_counts):
                                     print(f"🗑️ 物理文件清理：已彻底删除源文件 -> {full_path}")
                 except Exception as e:
                     print(f"⚠️ 物理文件删除失败 (可能文件被占用): {e}")
-                # ==========================================
 
                 print(f"✅ 文件已成功彻底删除")
+
+                # 🟢 修复核心：文件删除成功后，清空上方可能残留的“添加成功”提示文字
+                status_update = ""
+
             except Exception as e:
                 import traceback
                 traceback.print_exc()
                 print(f"❌ 删除知识库文件失败: {e}")
 
-    # 2. 无论刷新还是删除后，都重新获取一次文件列表
+    # ------------------------------------------
+    # 3. 统一获取并渲染文档列表
+    # ------------------------------------------
+    # 无论上面执行了上传还是删除，最后都重新读取一次文件列表进行渲染
     try:
-        # 兼容判断
         if hasattr(turbine_system, 'kb_adapter'):
             docs_info = turbine_system.kb_adapter.list_documents()
         else:
@@ -505,43 +486,44 @@ def refresh_or_delete_kb(refresh_clicks, delete_counts):
         documents = docs_info.get("documents", {})
 
         if not documents:
-            return fac.AntdEmpty(description="知识库目前为空，尚未添加任何文档")
+            doc_list_ui = fac.AntdEmpty(description="知识库目前为空，尚未添加任何文档")
+        else:
+            cards = []
+            for file_path, meta in documents.items():
+                file_name = meta.get("file_name", os.path.basename(file_path))
+                doc_type = meta.get("doc_type", "未知类型")
+                chunk_count = meta.get("chunk_count", 0)
 
-        cards = []
-        for file_path, meta in documents.items():
-            file_name = meta.get("file_name", os.path.basename(file_path))
-            doc_type = meta.get("doc_type", "未知类型")
-            chunk_count = meta.get("chunk_count", 0)
+                encoded_path = base64.b64encode(file_path.encode('utf-8')).decode('utf-8')
 
-            # 🟢 修复核心：对含有特殊字符的文件路径进行 Base64 安全编码
-            encoded_path = base64.b64encode(file_path.encode('utf-8')).decode('utf-8')
+                card = fac.AntdCard(
+                    title=f"📄 {file_name}",
+                    extra=fac.AntdPopconfirm(
+                        fac.AntdButton("🗑️ 删除", type="primary", danger=True, size="small"),
+                        title=f"确定要彻底删除 {file_name} 吗？",
+                        okText="确定删除",
+                        okButtonProps={'danger': True},
+                        cancelText="取消",
+                        id={'type': 'kb-delete-btn', 'index': encoded_path}
+                    ),
+                    children=[
+                        html.Div(f"存储路径: {file_path}",
+                                 style={'fontSize': '12px', 'color': '#8c8c8c', 'wordBreak': 'break-all'}),
+                        html.Div(f"文件类型: {doc_type} | 拆分片段数: {chunk_count}", style={'marginTop': '5px'})
+                    ],
+                    style={'marginBottom': '10px', 'backgroundColor': '#fafafa'}
+                )
+                cards.append(card)
 
-            card = fac.AntdCard(
-                title=f"📄 {file_name}",
-                extra=fac.AntdPopconfirm(
-                    fac.AntdButton("🗑️ 删除", type="primary", danger=True, size="small"),
-                    title=f"确定要彻底删除 {file_name} 吗？",
-                    okText="确定删除",
-                    okButtonProps={'danger': True},
-                    cancelText="取消",
-                    # 绑定安全的动态 ID
-                    id={'type': 'kb-delete-btn', 'index': encoded_path}
-                ),
-                children=[
-                    html.Div(f"存储路径: {file_path}",
-                             style={'fontSize': '12px', 'color': '#8c8c8c', 'wordBreak': 'break-all'}),
-                    html.Div(f"文件类型: {doc_type} | 拆分片段数: {chunk_count}", style={'marginTop': '5px'})
-                ],
-                style={'marginBottom': '10px', 'backgroundColor': '#fafafa'}
-            )
-            cards.append(card)
-
-        return html.Div(cards)
+            doc_list_ui = html.Div(cards)
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         print(f"获取知识库列表失败: {e}")
-        return fac.AntdAlert(message="加载知识库列表失败，请检查系统后台日志。", description=str(e), type="error")
+        doc_list_ui = fac.AntdAlert(message="加载知识库列表失败，请检查系统后台日志。", description=str(e), type="error")
+
+    # 同时返回上传状态和文档列表组件
+    return status_update, doc_list_ui
 
 
