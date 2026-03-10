@@ -7,6 +7,9 @@ from dash import Input, Output, State, html, dcc, no_update
 from server import app
 from common.turbine_core.instance import turbine_system
 import feffery_antd_components as fac
+from dash import ctx
+from dash.dependencies import ALL
+import json
 
 # 尝试导入文档转换库
 try:
@@ -317,3 +320,133 @@ def handle_correction(nClicks, question, text_answer, hw_contents, hw_filename, 
 
     # 返回 7 个值：第 1 个更新结果面板，后 6 个 None 用于物理清空所有的文本框和文件上传组件
     return result_ui, None, None, None, None, None, None
+
+
+# ==========================================
+# 回调 6：知识库文件上传并解析加入 RAG
+# ==========================================
+@app.callback(
+    Output('kb-upload-status', 'children'),
+    Input('kb-upload-file', 'contents'),
+    State('kb-upload-file', 'filename'),
+    prevent_initial_call=True
+)
+def handle_kb_upload(contents, filename):
+    if not contents:
+        return no_update
+
+    try:
+        # 将前端上传的 base64 存为本地临时文件，供 RAG 提取
+        content_type, content_string = contents.split(',')
+        decoded_bytes = base64.b64decode(content_string)
+
+        # 保存到固定的上传暂存区或临时目录
+        save_dir = os.path.join(tempfile.gettempdir(), "turbine_kb_uploads")
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+
+        with open(save_path, "wb") as f:
+            f.write(decoded_bytes)
+
+        # 调用大模型/RAG 系统的 add_document 方法
+        turbine_system.kb_adapter.add_document(save_path)
+
+        return html.Span(f"✅ 文件 {filename} 已成功上传并加入知识库！请点击刷新列表。",
+                         style={'color': '#52c41a', 'fontWeight': 'bold'})
+    except Exception as e:
+        print(f"知识库添加文件失败: {e}")
+        return html.Span(f"❌ 文件 {filename} 添加失败: {str(e)}", style={'color': '#cf1322'})
+
+
+# ==========================================
+# 回调 7：获取知识库列表 与 动态删除文件
+# ==========================================
+@app.callback(
+    Output('kb-document-list-container', 'children'),
+    Input('kb-refresh-btn', 'nClicks'),
+    Input({'type': 'kb-delete-btn', 'index': ALL}, 'confirmCounts'),
+    prevent_initial_call=False
+)
+def refresh_or_delete_kb(refresh_clicks, delete_counts):
+    # 👇 加入调试日志，随时可以看到前端是否有发来请求
+    print("========== [DEBUG] 回调被触发: refresh_or_delete_kb ==========")
+    triggered_id = ctx.triggered_id
+    print(f"[DEBUG] 触发的 ID: {triggered_id}")
+
+    # 1. 检查是否是由于点击了“气泡弹窗的确认按钮”触发的
+    if triggered_id and isinstance(triggered_id, dict) and triggered_id.get('type') == 'kb-delete-btn':
+
+        # 安全检查：找出对应的触发项的值是否有效 (即 confirmCounts 是否大于 0)
+        is_confirmed = False
+        for t in ctx.triggered:
+            if 'confirmCounts' in t['prop_id'] and t.get('value'):
+                is_confirmed = True
+                break
+
+        if is_confirmed:
+            # 🟢 修复 1：使用 base64 解码获取真实的路径，完美避开反斜杠 \ 造成的 JSON 解析失败
+            encoded_path = triggered_id['index']
+            file_path_to_delete = base64.b64decode(encoded_path).decode('utf-8')
+
+            print(f"!!! 准备执行删除，目标文件: {file_path_to_delete} !!!")
+            try:
+                # 🟢 修复 2：自动兼容判断，不论你用的是 hasattr 还是直接映射，都不会报错
+                if hasattr(turbine_system, 'kb_adapter'):
+                    turbine_system.kb_adapter.delete_document(file_path_to_delete)
+                else:
+                    turbine_system.delete_document(file_path_to_delete)
+                print(f"✅ 文件已成功删除")
+            except Exception as e:
+                print(f"❌ 删除知识库文件失败: {e}")
+
+    # 2. 无论刷新还是删除后，都重新获取一次文件列表
+    try:
+        # 兼容判断
+        if hasattr(turbine_system, 'kb_adapter'):
+            docs_info = turbine_system.kb_adapter.list_documents()
+        else:
+            docs_info = turbine_system.list_documents()
+
+        documents = docs_info.get("documents", {})
+
+        if not documents:
+            return fac.AntdEmpty(description="知识库目前为空，尚未添加任何文档")
+
+        cards = []
+        for file_path, meta in documents.items():
+            file_name = meta.get("file_name", os.path.basename(file_path))
+            doc_type = meta.get("doc_type", "未知类型")
+            chunk_count = meta.get("chunk_count", 0)
+
+            # 🟢 修复核心：对含有特殊字符的文件路径进行 Base64 安全编码
+            encoded_path = base64.b64encode(file_path.encode('utf-8')).decode('utf-8')
+
+            card = fac.AntdCard(
+                title=f"📄 {file_name}",
+                extra=fac.AntdPopconfirm(
+                    fac.AntdButton("🗑️ 删除", type="primary", danger=True, size="small"),
+                    title=f"确定要彻底删除 {file_name} 吗？",
+                    okText="确定删除",
+                    okButtonProps={'danger': True},
+                    cancelText="取消",
+                    # 绑定安全的动态 ID
+                    id={'type': 'kb-delete-btn', 'index': encoded_path}
+                ),
+                children=[
+                    html.Div(f"存储路径: {file_path}",
+                             style={'fontSize': '12px', 'color': '#8c8c8c', 'wordBreak': 'break-all'}),
+                    html.Div(f"文件类型: {doc_type} | 拆分片段数: {chunk_count}", style={'marginTop': '5px'})
+                ],
+                style={'marginBottom': '10px', 'backgroundColor': '#fafafa'}
+            )
+            cards.append(card)
+
+        return html.Div(cards)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"获取知识库列表失败: {e}")
+        return fac.AntdAlert(message="加载知识库列表失败，请检查系统后台日志。", description=str(e), type="error")
+
+
