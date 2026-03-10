@@ -39,101 +39,86 @@ def render_content(menu_access: MenuAccess, **kwargs):
         # 保存真实的用户 session_id 给回调使用
         dcc.Store(id='turbine-session-store', data={'session_id': session_id}),
 
+        # 🟢 新增：用于在浏览器本地持久化保存聊天历史
+        dcc.Store(id='chat-history-store', data={}, storage_type='local'),
+        # 🟢 新增：用于接收自动滚动触发的占位符
+        html.Div(id='chat-scroll-dummy', style={'display': 'none'}),
+
         fac.AntdTitle("⚙️ 透平机械原理教学智能体", level=2, style={'marginBottom': '20px'}),
 
-        # ===== 🌟 用户画像与评分展示面板 (纯手工 Flexbox 完美居中版) =====
         fac.AntdCard(
             title="🧑‍🎓 我的学习档案 (基于大模型动态评估)",
             style={'marginBottom': '20px', 'backgroundColor': '#f8fafd', 'borderRadius': '8px'},
             headStyle={'fontWeight': 'bold'},
             children=[
-                # 使用原生 Div 开启 flex 布局，space-around 保证三个元素完美等距且居中
                 html.Div(
                     style={
-                        'display': 'flex',
-                        'justifyContent': 'space-around',
-                        'alignItems': 'center',
-                        'width': '100%',
-                        'padding': '10px 0'
+                        'display': 'flex', 'justifyContent': 'space-around',
+                        'alignItems': 'center', 'width': '100%', 'padding': '10px 0'
                     },
                     children=[
-                        # --- 模块 1：能力值 ---
-                        html.Div(
-                            style={'textAlign': 'center'},
-                            children=[
-                                html.Div("当前能力值 (Elo)",
-                                         style={'color': '#8c8c8c', 'fontSize': '14px', 'marginBottom': '8px'}),
-                                html.Div(elo_rating,
-                                         style={'color': '#cf1322', 'fontSize': '28px', 'fontWeight': 'bold'})
-                            ]
-                        ),
-
-                        # --- 模块 2：等级 ---
-                        html.Div(
-                            style={'textAlign': 'center'},
-                            children=[
-                                html.Div("系统评估等级",
-                                         style={'color': '#8c8c8c', 'fontSize': '14px', 'marginBottom': '8px'}),
-                                html.Div(level_display, style={
-                                    'color': '#096dd9',
-                                    'fontSize': '26px',
-                                    'fontWeight': 'bold',
-                                    'whiteSpace': 'nowrap'  # 强制不换行
-                                })
-                            ]
-                        ),
-
-                        # --- 模块 3：薄弱点 ---
-                        html.Div(
-                            style={'textAlign': 'center'},
-                            children=[
-                                html.Div("待巩固薄弱点",
-                                         style={'color': '#8c8c8c', 'fontSize': '14px', 'marginBottom': '8px'}),
-                                html.Div(weak_points_str,
-                                         style={'color': '#d48806', 'fontSize': '18px', 'fontWeight': 'bold'})
-                            ]
-                        )
+                        html.Div(style={'textAlign': 'center'}, children=[
+                            html.Div("当前能力值 (Elo)",
+                                     style={'color': '#8c8c8c', 'fontSize': '14px', 'marginBottom': '8px'}),
+                            html.Div(elo_rating, style={'color': '#cf1322', 'fontSize': '28px', 'fontWeight': 'bold'})
+                        ]),
+                        html.Div(style={'textAlign': 'center'}, children=[
+                            html.Div("系统评估等级",
+                                     style={'color': '#8c8c8c', 'fontSize': '14px', 'marginBottom': '8px'}),
+                            html.Div(level_display, style={'color': '#096dd9', 'fontSize': '26px', 'fontWeight': 'bold',
+                                                           'whiteSpace': 'nowrap'})
+                        ]),
+                        html.Div(style={'textAlign': 'center'}, children=[
+                            html.Div("待巩固薄弱点",
+                                     style={'color': '#8c8c8c', 'fontSize': '14px', 'marginBottom': '8px'}),
+                            html.Div(weak_points_str,
+                                     style={'color': '#d48806', 'fontSize': '18px', 'fontWeight': 'bold'})
+                        ])
                     ]
                 )
             ]
         ),
-        # ============================================
 
         fac.AntdTabs(
             id='turbine-tabs',
-            type='card',  # 改用卡片式 Tabs，视觉更清晰
+            type='card',
             items=[
                 {
                     'label': '💬 智能问答',
                     'key': 'qa-tab',
                     'children': html.Div([
-                        # 1. 聊天记录显示区
-                        html.Div(
-                            id='chat-history-container',
-                            style={
-                                'height': '450px',
-                                'overflowY': 'auto',
-                                'padding': '15px',
-                                'backgroundColor': '#ffffff',
-                                'border': '1px solid #f0f0f0',
-                                'borderRadius': '8px',
-                                'marginBottom': '20px'
-                            }
-                        ),
-                        # 2. 独立的输入框包装区 (在这里控制缩短和居中)
-                        html.Div(
-                            fac.AntdInput(
-                                mode='search',
-                                id='chat-input',
-                                placeholder="请输入关于透平机械的问题，按回车发送...",
-                                size="large",
-                                # 控制输入框自身的高度和圆角
-                                style={'height': '50px', 'fontSize': '16px', 'borderRadius': '8px'}
-                            ),
-                            # 控制整个输入框居中，并且占据 70% 的宽度
-                            style={'width': '70%', 'margin': '0 auto'}
+                        # 🟢 优化：将问答包裹进独立卡片，并加入"清空历史"功能
+                        fac.AntdCard(
+                            title="与大模型对话",
+                            extra=fac.AntdButton("🗑️ 清空历史", id="clear-chat-btn", type="dashed", danger=True),
+                            children=[
+                                html.Div(
+                                    id='chat-history-container',
+                                    style={
+                                        'height': '450px',
+                                        'overflowY': 'auto',
+                                        'padding': '15px',
+                                        'backgroundColor': '#f9f9f9',  # 更接近标准对话框的底色
+                                        'border': '1px solid #f0f0f0',
+                                        'borderRadius': '8px',
+                                        'marginBottom': '20px',
+                                        'display': 'flex',
+                                        'flexDirection': 'column'  # 让对话自上而下顺流
+                                    }
+                                ),
+                                html.Div(
+                                    fac.AntdInput(
+                                        mode='search',
+                                        id='chat-input',
+                                        placeholder="请输入关于透平机械的问题，按回车发送...",
+                                        size="large",
+                                        style={'height': '50px', 'fontSize': '16px', 'borderRadius': '8px'}
+                                    ),
+                                    style={'width': '80%', 'margin': '0 auto'}
+                                )
+                            ]
                         )
-                    ], style={'padding': '10px'}) # 给整个问答区一点内边距
+                    ], style={'padding': '10px'})
                 },
                 {
                     'label': '📝 生成练习题',
