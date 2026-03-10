@@ -10,6 +10,7 @@ import feffery_antd_components as fac
 from dash import ctx
 from dash.dependencies import ALL
 import json
+import os, json, glob
 
 # 尝试导入文档转换库
 try:
@@ -325,6 +326,9 @@ def handle_correction(nClicks, question, text_answer, hw_contents, hw_filename, 
 # ==========================================
 # 回调 6：知识库文件上传并解析加入 RAG
 # ==========================================
+# ==========================================
+# 回调 6：知识库文件上传并解析加入 RAG
+# ==========================================
 @app.callback(
     Output('kb-upload-status', 'children'),
     Input('kb-upload-file', 'contents'),
@@ -336,12 +340,15 @@ def handle_kb_upload(contents, filename):
         return no_update
 
     try:
-        # 将前端上传的 base64 存为本地临时文件，供 RAG 提取
+        # 将前端上传的 base64 存为本地固定目录下的文件，供 RAG 提取
         content_type, content_string = contents.split(',')
         decoded_bytes = base64.b64decode(content_string)
 
-        # 保存到固定的上传暂存区或临时目录
-        save_dir = os.path.join(tempfile.gettempdir(), "turbine_kb_uploads")
+        # 🛑 修改点：将保存路径由系统的临时目录(tempfile.gettempdir())改为本地项目下的特定路径
+        # 这里设置为项目根目录下的 user_data/kb_uploads 文件夹
+        save_dir = os.path.join(os.getcwd(), "user_data", "knowledge_base")
+
+        # 确保目录存在，如果不存在则自动创建
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, filename)
 
@@ -351,7 +358,7 @@ def handle_kb_upload(contents, filename):
         # 调用大模型/RAG 系统的 add_document 方法
         turbine_system.kb_adapter.add_document(save_path)
 
-        return html.Span(f"✅ 文件 {filename} 已成功上传并加入知识库！请点击刷新列表。",
+        return html.Span(f"✅ 文件 {filename} 已成功保存至本地 {save_path} 并加入知识库！请点击刷新列表。",
                          style={'color': '#52c41a', 'fontWeight': 'bold'})
     except Exception as e:
         print(f"知识库添加文件失败: {e}")
@@ -384,19 +391,107 @@ def refresh_or_delete_kb(refresh_clicks, delete_counts):
                 break
 
         if is_confirmed:
-            # 🟢 修复 1：使用 base64 解码获取真实的路径，完美避开反斜杠 \ 造成的 JSON 解析失败
+            # 1. 使用 base64 解码获取真实的路径
             encoded_path = triggered_id['index']
             file_path_to_delete = base64.b64decode(encoded_path).decode('utf-8')
 
             print(f"!!! 准备执行删除，目标文件: {file_path_to_delete} !!!")
             try:
-                # 🟢 修复 2：自动兼容判断，不论你用的是 hasattr 还是直接映射，都不会报错
-                if hasattr(turbine_system, 'kb_adapter'):
-                    turbine_system.kb_adapter.delete_document(file_path_to_delete)
-                else:
-                    turbine_system.delete_document(file_path_to_delete)
-                print(f"✅ 文件已成功删除")
+                adapter = turbine_system.kb_adapter if hasattr(turbine_system, 'kb_adapter') else turbine_system
+                adapter.delete_document(file_path_to_delete)
+
+                # ==========================================
+                # 🟢 终极“幽灵记录”抹除术（内存 + 硬盘 + 物理文件三杀）
+                # ==========================================
+
+                # --- A. 内存级深层大扫除 ---
+                def scrub_memory_dict(target_dict):
+                    if not isinstance(target_dict, dict): return
+                    zombie_keys = [k for k in target_dict.keys() if
+                                   isinstance(k, str) and k.lower() == file_path_to_delete.lower()]
+                    for zk in zombie_keys:
+                        target_dict.pop(zk, None)
+                        print(f"🔧 内存清理：已成功抹除底层字典键名 -> {zk}")
+
+                # 兼容 'documents' 和 'doc_metadata'
+                docs_info = adapter.list_documents()
+                for key_name in ['documents', 'doc_metadata']:
+                    if isinstance(docs_info, dict) and key_name in docs_info:
+                        scrub_memory_dict(docs_info[key_name])
+
+                for attr_name in dir(adapter):
+                    if attr_name.startswith('__'): continue
+                    try:
+                        attr_val = getattr(adapter, attr_name)
+                        if isinstance(attr_val, dict):
+                            scrub_memory_dict(attr_val)
+                            for key_name in ['documents', 'doc_metadata']:
+                                if key_name in attr_val and isinstance(attr_val[key_name], dict):
+                                    scrub_memory_dict(attr_val[key_name])
+                    except Exception:
+                        pass
+
+                for save_func in ['save_metadata', '_save_metadata', 'save', 'persist']:
+                    if hasattr(adapter, save_func):
+                        try:
+                            getattr(adapter, save_func)()
+                        except Exception:
+                            pass
+
+                # --- B. 硬盘级物理超度 JSON 元数据 ---
+                kb_dir = os.path.join(os.getcwd(), "user_data", "knowledge_base")
+                upload_dir = os.path.join(os.getcwd(), "user_data", "kb_uploads")
+
+                for target_dir in [kb_dir, upload_dir]:
+                    if not os.path.exists(target_dir): continue
+                    for jf in glob.glob(os.path.join(target_dir, "*.json")):
+                        try:
+                            with open(jf, 'r', encoding='utf-8') as f:
+                                data = json.load(f)
+                            modified = False
+
+                            # 🎯 修复核心：动态检查 'documents' 或 'doc_metadata'
+                            if isinstance(data, dict):
+                                for root_key in ['documents', 'doc_metadata']:
+                                    if root_key in data and isinstance(data[root_key], dict):
+                                        d_dict = data[root_key]
+                                        zombie_keys = [k for k in d_dict.keys() if
+                                                       k.lower() == file_path_to_delete.lower()]
+                                        for zk in zombie_keys:
+                                            d_dict.pop(zk, None)
+                                            modified = True
+
+                            if modified:
+                                with open(jf, 'w', encoding='utf-8') as f:
+                                    json.dump(data, f, ensure_ascii=False, indent=4)
+                                print(f"🔨 硬盘清理：已物理修改 JSON 切断复活 -> {os.path.basename(jf)}")
+                        except Exception as e:
+                            print(f"JSON 修改错误: {e}")
+
+                # --- C. 物理删除原 PDF/Word 文件 ---
+                try:
+                    # 1. 尝试直接删除完整路径
+                    if os.path.exists(file_path_to_delete):
+                        os.remove(file_path_to_delete)
+                        print(f"🗑️ 物理文件清理：已彻底删除源文件 -> {file_path_to_delete}")
+
+                    # 2. 为防 Windows 路径大小写导致找不到，再做一次目录地毯式搜索删除
+                    base_name = os.path.basename(file_path_to_delete)
+                    for target_dir in [kb_dir, upload_dir]:
+                        if os.path.exists(target_dir):
+                            for f in os.listdir(target_dir):
+                                if f.lower() == base_name.lower():
+                                    full_path = os.path.join(target_dir, f)
+                                    os.remove(full_path)
+                                    print(f"🗑️ 物理文件清理：已彻底删除源文件 -> {full_path}")
+                except Exception as e:
+                    print(f"⚠️ 物理文件删除失败 (可能文件被占用): {e}")
+                # ==========================================
+
+                print(f"✅ 文件已成功彻底删除")
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 print(f"❌ 删除知识库文件失败: {e}")
 
     # 2. 无论刷新还是删除后，都重新获取一次文件列表
